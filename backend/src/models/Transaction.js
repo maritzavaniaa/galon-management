@@ -2,18 +2,15 @@ import mongoose from "mongoose";
 
 const transactionSchema = new mongoose.Schema(
   {
-    employee: {
-      type: mongoose.Schema.Types.ObjectId,
-      ref: "Employee",
-      required: true
+    employeeId: {
+      type: String,
+      required: true,
+      ref: "Employee"
     },
-    quantity: { 
-        type: Number, 
-        required: true 
-    },
-    date: { 
-        type: Date, 
-        default: Date.now 
+    amount: {
+      type: Number,
+      required: true,
+      min: 1
     }
   },
   { timestamps: true }
