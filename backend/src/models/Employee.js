@@ -18,7 +18,7 @@ const employeeSchema = new mongoose.Schema(
     level: {
         type: String,
         required: true,
-        ref: 'Levels' 
+        ref: 'Level' 
     },
     pic: {
         type: String, 
