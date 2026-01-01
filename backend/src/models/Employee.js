@@ -8,23 +8,24 @@ const employeeSchema = new mongoose.Schema(
         unique: true
     },
     name: {
-      type: String,
-      required: true,
-    },
+        type: String,
+        required: true,
+    },  
     department: {
         type: String,
         required: true
     },
     level: {
-      type: String,
-      required: true, 
+        type: String,
+        required: true,
+        ref: 'Levels' 
     },
     pic: {
-      type: String, 
+        type: String, 
     },
   },
   {
-    timestamps: true,
+        timestamps: true,
   }
 );
 

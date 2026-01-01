@@ -6,9 +6,9 @@ const router = express.Router();
 // POST /api/employees
 router.post("/employees", async (req, res) => {
   try {
-    const { employeeID } = req.body;
+    const { _id } = req.body;
 
-    if (await Employee.findOne({ employeeID })) {
+    if (await Employee.findOne({ _id })) {
       return res.status(409).json({ message: "Employee already exists" });
     }
 

@@ -1,6 +1,7 @@
 import express from "express";
 import Transaction from "../models/Transaction.js";
 import Employee from "../models/employee.js";
+import MonthlyQuota from "../models/MonthlyQuota.js";
 
 const router = express.Router();
 
@@ -17,31 +18,36 @@ const getTodayRange = () => {
 
 // POST /api/transactions - add new transaction
 router.post("/transactions", async (req, res) => {
-  try {
-    const { employeeId, amount } = req.body;
-
-    if (!employeeId || !amount) {
-      return res.status(400).json({ message: "employeeId and amount required" });
-    }
-
-    if (amount <= 0) {
-      return res.status(400).json({ message: "amount must be > 0" });
-    }
-
-    const employee = await Employee.findById(employeeId);
-    if (!employee) {
-      return res.status(404).json({ message: "Employee not found" });
-    }
-
-    const transaction = await Transaction.create({
-      employeeId,
-      amount
-    });
-
-    res.status(201).json(transaction);
-  } catch (err) {
-    res.status(500).json({ message: err.message });
-  }
+    try {
+        const { month } = req.body; // Format: "YYYY-MM"
+    
+        // Ambil semua employee dan populate field level
+        const employees = await Employee.find({}).populate('level');
+    
+        const results = await Promise.all(
+          employees.map(async (emp) => {
+            if (!emp.level || emp.level.monthlyQuota == null) {
+              throw new Error(`Level quota not defined for employee ${emp.name}`);
+            }
+    
+            const quota = emp.level.monthlyQuota;
+    
+            return await MonthlyQuota.findOneAndUpdate(
+              { employeeId: emp._id, month: month },
+              { 
+                quotaTotal: quota,
+                remainingQuota: quota,
+                quotaUsed: 0 
+              },
+              { upsert: true, new: true }
+            );
+          })
+        );
+    
+        res.status(201).json({ message: `Jatah bulan ${month} berhasil disiapkan`, data: results });
+        } catch (err) {
+            res.status(500).json({ message: err.message });
+        }
 });
 
 // GET /api/transactions/today - read today transactions
@@ -80,6 +86,18 @@ router.delete("/transactions/:id", async (req, res) => {
       return res.status(403).json({
         message: "Only today's transactions can be deleted"
       });
+    }
+
+    const currentMonth = createdAt.toISOString().slice(0, 7);
+    const quotaRecord = await MonthlyQuota.findOne({
+        employeeId: transaction.employeeId,
+        month: currentMonth
+    });
+
+    if (quotaRecord) {
+        quotaRecord.quotaUsed -= transaction.amount;
+        quotaRecord.remainingQuota += transaction.amount;
+        await quotaRecord.save();
     }
 
     await transaction.deleteOne();
