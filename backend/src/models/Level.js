@@ -1,6 +1,6 @@
 import mongoose from "mongoose";
 
-const levelsSchema = new mongoose.Schema({
+const levelSchema = new mongoose.Schema({
     _id: { 
         type: String, 
         required: true,
@@ -16,5 +16,5 @@ const levelsSchema = new mongoose.Schema({
     }, 
 });
 
-const Levels = mongoose.model("Levels", levelsSchema);
-export default Levels;
+const Level = mongoose.model("Level", levelSchema);
+export default Level;

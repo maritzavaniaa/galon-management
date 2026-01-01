@@ -19,32 +19,45 @@ const getTodayRange = () => {
 // POST /api/transactions - add new transaction
 router.post("/transactions", async (req, res) => {
     try {
-        const { month } = req.body; // Format: "YYYY-MM"
+        const { employeeId, amount } = req.body; 
     
-        // Ambil semua employee dan populate field level
-        const employees = await Employee.find({}).populate('level');
+        if (!employeeId || !amount) {
+            return res.status(400).json({message: "employeeId dan amount wajib diisi"});
+        }
+
+        if (amount <= 0) {
+            return res.status(400).json({message: "amount harus > 0"});
+        }
+
+        const currentMonth = new Date().toISOString().slice(0,7);
+
+        const quota = await MonthlyQuota.findOne({
+            employeeId,
+            month: currentMonth
+        });
+
+        if (!quota) {
+            return res.status(404).json({message: "Quota bulan ini belum diinisialisasi"})
+        }
+
+        if (quota.remainingQuota < amount) {
+            return res.status(400).json({message: "Quota tidak mencukupi"});
+        }
+
+        quota.quotaUsed += amount;
+        quota.remainingQuota -= amount;
+        await quota.save();
+
+        const transaction = await Transaction.create({
+            employeeId,
+            amount
+        });
     
-        const results = await Promise.all(
-          employees.map(async (emp) => {
-            if (!emp.level || emp.level.monthlyQuota == null) {
-              throw new Error(`Level quota not defined for employee ${emp.name}`);
-            }
-    
-            const quota = emp.level.monthlyQuota;
-    
-            return await MonthlyQuota.findOneAndUpdate(
-              { employeeId: emp._id, month: month },
-              { 
-                quotaTotal: quota,
-                remainingQuota: quota,
-                quotaUsed: 0 
-              },
-              { upsert: true, new: true }
-            );
-          })
-        );
-    
-        res.status(201).json({ message: `Jatah bulan ${month} berhasil disiapkan`, data: results });
+        res.status(201).json({ 
+            message: "Transaksi berhasil",
+            transaction, 
+            remainingQuota: quota.remainingQuota 
+        });
         } catch (err) {
             res.status(500).json({ message: err.message });
         }
@@ -71,37 +84,62 @@ router.delete("/transactions/:id", async (req, res) => {
     const { password } = req.body;
 
     if (password !== process.env.ADMIN_DELETE_PASSWORD) {
-      return res.status(403).json({ message: "Invalid password" });
+      return res.status(403).json({ message: "Password salah" });
     }
 
     const transaction = await Transaction.findById(req.params.id);
     if (!transaction) {
-      return res.status(404).json({ message: "Transaction not found" });
+      return res.status(404).json({ message: "Transaksi tidak ditemukan" });
     }
 
+    // Validasi: hanya hari ini
     const { start, end } = getTodayRange();
     const createdAt = new Date(transaction.createdAt);
 
     if (createdAt < start || createdAt > end) {
       return res.status(403).json({
-        message: "Only today's transactions can be deleted"
+        message: "Hanya transaksi hari ini yang bisa dihapus"
       });
     }
 
+    // Rollback quota
     const currentMonth = createdAt.toISOString().slice(0, 7);
     const quotaRecord = await MonthlyQuota.findOne({
         employeeId: transaction.employeeId,
         month: currentMonth
     });
 
-    if (quotaRecord) {
-        quotaRecord.quotaUsed -= transaction.amount;
-        quotaRecord.remainingQuota += transaction.amount;
-        await quotaRecord.save();
-    }
-
     await transaction.deleteOne();
-    res.json({ message: "Transaction deleted" });
+
+    const usedAgg = await Transaction.aggregate([
+        {
+            $match: {
+                employeeId: transaction.employeeId,
+                createdAt: {
+                    $gte: new Date(`${currentMonth}-01`),
+                    $lt: new Date(`${currentMonth}-31`)
+                }
+            }
+        },
+        {
+            $group: {
+                _id: null,
+                totalUsed: {$sum:"$amount"}
+            }
+        }
+    ]);
+
+    const totalUsed = usedAgg[0]?.totalUsed || 0;
+
+    quotaRecord.quotaUsed = totalUsed;
+    quotaRecord.remainingQuota = quotaRecord.quotaTotal - totalUsed;
+    await quotaRecord.save();
+
+    res.json({ 
+        message: "Transaksi berhasil dihapus",
+        employeeId: transaction.employeeId,
+        remainingQuota: quotaRecord.remainingQuota
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
