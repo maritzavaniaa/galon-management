@@ -7,26 +7,31 @@ const router = express.Router();
 // 1. Inisialisasi jatah bulanan untuk SEMUA karyawan (Bisa dipanggil Admin setiap awal bulan)
 router.post("/monthly-quota/init", async (req, res) => {
   try {
-    const { month } = req.body; // Contoh: "2025-02"
-    const employees = await Employee.find({});
+    const { month } = req.body; // Format : YYYY-MM
+    if (!month) {
+        return res.status(400).json({message: "Month is required (YYYY-MM"})
+    };
+
+    const employees = await Employee.find({}).populate("level");
     
     const results = await Promise.all(employees.map(async (emp) => {
-      
-        const employees = await Employee.find({}).populate('level');
+        const quotaFromLevel = emp.level ? emp.level.monthlyQuota || 0 : 0;
 
-        // Logic: Jika quota di tabel Employee adalah master jatahnya
         return await MonthlyQuota.findOneAndUpdate(
             { employeeId: emp._id, month: month },
             { 
-            quotaTotal: emp.quota, 
-            remainingQuota: emp.quota,
+            quotaTotal: quotaFromLevel, 
+            remainingQuota: quotaFromLevel,
             quotaUsed: 0 
             },
             { upsert: true, new: true }
         );
     }));
 
-    res.status(201).json({ message: `Jatah bulan ${month} berhasil disiapkan`, data: results });
+    res.status(201).json({ 
+        message: `Jatah bulan ${month} berhasil disiapkan`, 
+        data: results 
+    });
   } catch (err) {
     res.status(500).json({ message: err.message });
   }
